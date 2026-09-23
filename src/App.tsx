@@ -1,162 +1,96 @@
+import { useEffect, useMemo, useState } from "react";
 import "./styles.css";
+import { Header } from "./components/Header";
+import { MetricsBar } from "./components/MetricsBar";
+import { SampleList } from "./components/SampleList";
+import { SampleDetail } from "./components/SampleDetail";
+import { useStation } from "./state/useStation";
+import { stationStore } from "./data/storage";
 
-const project = {
-  "id": "hxwl-06",
-  "port": 5106,
-  "title": "显微镜玻片观察",
-  "subtitle": "样本、多倍率视野与染色观察记录库",
-  "stack": "React + Vite + TypeScript + CSS",
-  "theme": [
-    "#4338ca",
-    "#0d9488",
-    "#db2777"
-  ],
-  "domain": "生物显微观察",
-  "users": [
-    "实验课教师",
-    "学生",
-    "实验管理员"
-  ],
-  "metrics": [
-    "样本数",
-    "视野记录",
-    "染色方法",
-    "重点结构"
-  ],
-  "filters": [
-    "植物组织",
-    "动物组织",
-    "微生物",
-    "血液涂片"
-  ],
-  "fields": [
-    "样本名称",
-    "样本类型",
-    "染色方式",
-    "放大倍数",
-    "观察结构",
-    "视野描述"
-  ],
-  "records": [
-    [
-      "洋葱表皮",
-      "植物组织",
-      "碘液",
-      "400x",
-      "细胞壁清晰，细胞核可见"
-    ],
-    [
-      "人血涂片",
-      "血液涂片",
-      "瑞氏染色",
-      "1000x",
-      "红细胞分布均匀"
-    ],
-    [
-      "草履虫",
-      "微生物",
-      "活体观察",
-      "200x",
-      "纤毛运动明显"
-    ]
-  ]
-};
+export default function App() {
+  // 数据来自保存层（首次进入写入演示数据；之后刷新保持一致）
+  const [initial] = useState(() => stationStore.load());
+  const { state, metrics, error, actions } = useStation(initial);
+  const [currentObserverId, setCurrentObserverId] = useState(state.observers[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState<string | null>(state.samples[0]?.id ?? null);
+  const [toast, setToast] = useState<string | null>(null);
 
-const statusColors = ["status-ok", "status-watch", "status-danger"];
+  // 规则层报错在页面顶部短暂提示
+  useEffect(() => {
+    if (!error) return;
+    setToast(error);
+    const timer = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, [error]);
 
-function MetricCard({ label, value, index }: { label: string; value: string; index: number }) {
-  return (
-    <article className="metric-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <i className={statusColors[index % statusColors.length]} />
-    </article>
+  const selected = useMemo(
+    () => state.samples.find((s) => s.id === selectedId) ?? null,
+    [state.samples, selectedId]
   );
-}
 
-function App() {
-  const values = project.metrics.map((metric: string, index: number) => {
-    const base = [84, 12, 31, 7][index % 4];
-    return String(base + index * 3);
-  });
+  const handleCreate = (input: {
+    name: string;
+    type: Parameters<typeof actions.createSample>[0]["type"];
+  }) => {
+    const result = actions.createSample(input);
+    if (result.ok && result.sampleId) {
+      setSelectedId(result.sampleId); // createSample 把新样本置于列表首位
+      setToast("样本已建立，含低 / 中 / 高三个倍率视野");
+    }
+  };
+
+  const handleReset = () => {
+    const reset = actions.resetDemo();
+    if (reset.ok) {
+      setSelectedId(stationStore.load().samples[0]?.id ?? null);
+      setToast("已重置为演示数据");
+    }
+  };
 
   return (
     <main className="app-shell">
-      <section className="hero">
-        <div>
-          <p className="eyebrow">{project.id} · port {project.port}</p>
-          <h1>{project.title}</h1>
-          <p className="subtitle">{project.subtitle}</p>
-        </div>
-        <div className="stack-card">
-          <span>技术栈</span>
-          <strong>{project.stack}</strong>
-        </div>
-      </section>
+      <Header
+        observers={state.observers}
+        currentObserverId={currentObserverId}
+        onObserverChange={setCurrentObserverId}
+        onReset={handleReset}
+      />
 
-      <section className="metrics-grid">
-        {project.metrics.map((metric: string, index: number) => (
-          <MetricCard key={metric} label={metric} value={values[index]} index={index} />
-        ))}
-      </section>
+      {toast && (
+        <div className={`toast${error ? " toast-error" : ""}`} role="alert">
+          {toast}
+        </div>
+      )}
+
+      <MetricsBar metrics={metrics} />
 
       <section className="workspace">
-        <aside className="panel narrow">
-          <h2>角色</h2>
-          <div className="chips">
-            {project.users.map((user: string) => (
-              <span key={user}>{user}</span>
-            ))}
-          </div>
-          <h2>筛选</h2>
-          <div className="chips muted">
-            {project.filters.map((filter: string) => (
-              <button key={filter}>{filter}</button>
-            ))}
-          </div>
-        </aside>
+        <SampleList
+          samples={state.samples}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onCreate={handleCreate}
+        />
 
-        <section className="panel">
-          <div className="section-heading">
-            <div>
-              <p>{project.domain}</p>
-              <h2>记录字段</h2>
-            </div>
-            <button className="primary-action">新增记录</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
+        {selected ? (
+          <SampleDetail
+            state={state}
+            sample={selected}
+            currentObserverId={currentObserverId}
+            actions={actions}
+          />
+        ) : (
+          <section className="panel detail empty-detail">
+            <h2>请选择左侧样本</h2>
+            <p>或建立新样本，开始低 / 中 / 高倍率视野复现流程。</p>
+          </section>
+        )}
       </section>
 
-      <section className="records panel">
-        <div className="section-heading">
-          <div>
-            <p>示例数据</p>
-            <h2>近期记录</h2>
-          </div>
-          <button>导出摘要</button>
-        </div>
-        <div className="record-list">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")} className="record-card">
-              <div className="record-index">{String(index + 1).padStart(2, "0")}</div>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+      <footer className="page-footer">
+        数据（localStorage）、判断（domain/rules 纯函数）、保存（storage）与页面（components）分层；
+        刷新后样本、视野、会签与版本保持一致。
+      </footer>
     </main>
   );
 }
-
-export default App;
