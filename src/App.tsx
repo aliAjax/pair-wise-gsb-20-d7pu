@@ -1,159 +1,141 @@
+import { useMemo, useState } from "react";
 import "./styles.css";
+import { useBenchStore } from "./store";
+import { SPECIMEN_TYPES } from "./types";
+import type { SpecimenType } from "./types";
+import { SamplePanel } from "./components/SamplePanel";
 
-const project = {
-  "id": "hxwl-06",
-  "port": 5106,
-  "title": "显微镜玻片观察",
-  "subtitle": "样本、多倍率视野与染色观察记录库",
-  "stack": "React + Vite + TypeScript + CSS",
-  "theme": [
-    "#4338ca",
-    "#0d9488",
-    "#db2777"
-  ],
-  "domain": "生物显微观察",
-  "users": [
-    "实验课教师",
-    "学生",
-    "实验管理员"
-  ],
-  "metrics": [
-    "样本数",
-    "视野记录",
-    "染色方法",
-    "重点结构"
-  ],
-  "filters": [
-    "植物组织",
-    "动物组织",
-    "微生物",
-    "血液涂片"
-  ],
-  "fields": [
-    "样本名称",
-    "样本类型",
-    "染色方式",
-    "放大倍数",
-    "观察结构",
-    "视野描述"
-  ],
-  "records": [
-    [
-      "洋葱表皮",
-      "植物组织",
-      "碘液",
-      "400x",
-      "细胞壁清晰，细胞核可见"
-    ],
-    [
-      "人血涂片",
-      "血液涂片",
-      "瑞氏染色",
-      "1000x",
-      "红细胞分布均匀"
-    ],
-    [
-      "草履虫",
-      "微生物",
-      "活体观察",
-      "200x",
-      "纤毛运动明显"
-    ]
-  ]
-};
-
-const statusColors = ["status-ok", "status-watch", "status-danger"];
-
-function MetricCard({ label, value, index }: { label: string; value: string; index: number }) {
-  return (
-    <article className="metric-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <i className={statusColors[index % statusColors.length]} />
-    </article>
-  );
-}
+export type BenchActions = ReturnType<typeof useBenchStore>["actions"];
 
 function App() {
-  const values = project.metrics.map((metric: string, index: number) => {
-    const base = [84, 12, 31, 7][index % 4];
-    return String(base + index * 3);
-  });
+  const { state, notice, dismissNotice, actions } = useBenchStore();
+  const [typeFilter, setTypeFilter] = useState<SpecimenType | "全部">("全部");
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [specimenType, setSpecimenType] = useState<SpecimenType>("植物组织");
+
+  const currentUser = state.observers.find((o) => o.id === state.currentUserId);
+
+  const samples = useMemo(
+    () =>
+      state.samples.filter((s) => typeFilter === "全部" || s.specimenType === typeFilter),
+    [state.samples, typeFilter]
+  );
+
+  const metrics = useMemo(() => {
+    const confirmedFields = state.fields.filter((f) =>
+      f.versions.some((v) => v.status === "confirmed")
+    ).length;
+    const inReview = state.fields.filter((f) =>
+      f.versions.some((v) => v.status === "in_review" || v.status === "disputed")
+    ).length;
+    return [
+      { label: "样本数", value: String(state.samples.length) },
+      { label: "倍率视野", value: `${state.fields.length}/${state.samples.length * 3}` },
+      { label: "有效结论视野", value: String(confirmedFields) },
+      { label: "会签 / 复现中", value: String(inReview) },
+    ];
+  }, [state]);
 
   return (
     <main className="app-shell">
+      {notice && (
+        <div className={`notice ${notice.kind}`} onClick={dismissNotice}>
+          <span>{notice.kind === "err" ? "⚠ " : "✓ "}{notice.text}</span>
+          <b>×</b>
+        </div>
+      )}
+
       <section className="hero">
         <div>
-          <p className="eyebrow">{project.id} · port {project.port}</p>
-          <h1>{project.title}</h1>
-          <p className="subtitle">{project.subtitle}</p>
+          <p className="eyebrow">hxwl-06 · 多倍率视野复现台</p>
+          <h1>显微镜玻片多倍率视野复现台</h1>
+          <p className="subtitle">
+            每个样本建立低 / 中 / 高倍率视野，登记染色批次、载物台坐标、重点结构与观察者；
+            同一视野仅一条有效结论，两名独立观察者会签、原观察者不得自签，
+            结构或染色不一致转第三人复现；确认后冻结，更正写原因、建版本、留旧值。
+          </p>
         </div>
-        <div className="stack-card">
-          <span>技术栈</span>
-          <strong>{project.stack}</strong>
+        <div className="stack-card identity-card">
+          <span>当前观察者（会签身份）</span>
+          <strong>{currentUser?.name}</strong>
+          <em>{currentUser?.role}</em>
+          <select
+            value={state.currentUserId}
+            onChange={(e) => actions.switchUser(e.target.value)}
+          >
+            {state.observers.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name} · {o.role}
+              </option>
+            ))}
+          </select>
+          <button className="text-btn" onClick={actions.reset}>恢复演示数据</button>
         </div>
       </section>
 
       <section className="metrics-grid">
-        {project.metrics.map((metric: string, index: number) => (
-          <MetricCard key={metric} label={metric} value={values[index]} index={index} />
+        {metrics.map((m) => (
+          <article key={m.label} className="metric-card">
+            <span>{m.label}</span>
+            <strong>{m.value}</strong>
+          </article>
         ))}
       </section>
 
       <section className="workspace">
         <aside className="panel narrow">
-          <h2>角色</h2>
-          <div className="chips">
-            {project.users.map((user: string) => (
-              <span key={user}>{user}</span>
-            ))}
-          </div>
-          <h2>筛选</h2>
+          <h2>新建样本</h2>
+          <form
+            className="stack-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              actions.addSample({ code, name, specimenType });
+              setCode("");
+              setName("");
+            }}
+          >
+            <label className="labeled">
+              <span>玻片编号</span>
+              <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="如 BP-2026-010" />
+            </label>
+            <label className="labeled">
+              <span>样本名称</span>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="如 蚕豆叶下表皮" />
+            </label>
+            <label className="labeled">
+              <span>样本类型</span>
+              <select value={specimenType} onChange={(e) => setSpecimenType(e.target.value as SpecimenType)}>
+                {SPECIMEN_TYPES.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </label>
+            <button type="submit" className="primary-action small">建立样本</button>
+          </form>
+
+          <h2>按类型筛选</h2>
           <div className="chips muted">
-            {project.filters.map((filter: string) => (
-              <button key={filter}>{filter}</button>
+            {(["全部", ...SPECIMEN_TYPES] as const).map((t) => (
+              <button
+                key={t}
+                className={typeFilter === t ? "chip-active" : ""}
+                onClick={() => setTypeFilter(t)}
+              >
+                {t}
+              </button>
             ))}
           </div>
         </aside>
 
-        <section className="panel">
-          <div className="section-heading">
-            <div>
-              <p>{project.domain}</p>
-              <h2>记录字段</h2>
-            </div>
-            <button className="primary-action">新增记录</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
-
-      <section className="records panel">
-        <div className="section-heading">
-          <div>
-            <p>示例数据</p>
-            <h2>近期记录</h2>
-          </div>
-          <button>导出摘要</button>
-        </div>
-        <div className="record-list">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")} className="record-card">
-              <div className="record-index">{String(index + 1).padStart(2, "0")}</div>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
+        <section className="samples-stack">
+          {samples.length === 0 && (
+            <div className="panel empty-hint">该类型下暂无样本，先在左侧建立。</div>
+          )}
+          {samples.map((sample) => (
+            <SamplePanel key={sample.id} sample={sample} state={state} actions={actions} />
           ))}
-        </div>
+        </section>
       </section>
     </main>
   );
